@@ -172,7 +172,7 @@ class Vhm_Bitly_Admin {
 	 * @since  1.0.0
 	 */
 	public function vhm_bitly_general_txt() {
-		echo '<p>' . __( 'Add contact buttons on your website.', $this->plugin_name ) . '</p>';
+		echo '<p>' . __( 'Create short links using the Bitly service.', $this->plugin_name ) . '</p>';
 	}
 
 	/**
@@ -184,16 +184,8 @@ class Vhm_Bitly_Admin {
 		$token = get_option( $this->option_name . '_token' );
 
 		echo '<input type="text" name="' . $this->option_name . '_token" id="' . $this->option_name . '_token" value="' . $token . '">';
-		echo '<p class="description">' . __('Paste your Bitly Token.', $this->plugin_name) . '</p>';
-	}
-
-	public function vhm_create_bitly_link($post_id)
-	{
-		if ( wp_is_post_revision( $post_id ) ) {
-			return;
-		}
-
-		
+		echo '<p class="description">' . __('Paste your Bitly Generic Access Token.', $this->plugin_name) . '</p>';
+		echo '<p class="description">¿How to get a Generic Access token?</p>';
 	}
 
 	public function add_meta_box()
@@ -204,62 +196,74 @@ class Vhm_Bitly_Admin {
                 'vhm_bitly_meta_box',          // Unique ID
                 __('VHM Bitly',  $this->plugin_name), // Box title
                 [$this, 'html_meta_box'],   // Content callback, must be of type callable
-                $screens,
+                $screen,
                 'advanced'
             );
         }
     }
- 
-    public function save_meta_box($post_id)
-    {
-		$post_title = get_the_title( $post_id );
-		$post_url = get_permalink( $post_id );
-		$set_as_permalink = ($_POST['vhm_set_as_permalink'] == 1) ? 'on' : 'off' ;
-		
-		$apiv4 = 'https://api-ssl.bitly.com/v4/bitlinks';
-		$genericAccessToken = $this->token;
-
-		$data = array(
-			'title' => $post_title,
-			'long_url' => $post_url
-		);
-		$payload = json_encode($data);
-
-		$header = array(
-			'Authorization: Bearer ' . $genericAccessToken,
-			'Content-Type: application/json',
-			'Content-Length: ' . strlen($payload)
-		);
-
-		$ch = curl_init($apiv4);
-		curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");
-		curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
-		curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-		curl_setopt($ch, CURLOPT_HTTPHEADER, $header);
-		$result = curl_exec($ch);
-		$resultToJson = json_decode($result);
-
-		update_post_meta($post_id,'_vhm_set_as_permalink', $set_as_permalink);
-		if (isset($resultToJson->link)) {
-			update_post_meta($post_id, '_vhm_bitly', $resultToJson->link);
-		}
-		
-    }
- 
-    public function html_meta_box($post)
+	
+	public function html_meta_box($post)
     {
 		$vhm_bitly_link = get_post_meta($post->ID, '_vhm_bitly', true);
-		$vhm_set_as_permalink = get_post_meta($post->ID, '_vhm_set_as_permalink', true);
 
 		if ($this->token)
 		{
-			echo '<table class="form-table">';
-			echo '<tr><th><label for="vhm_bitly_link">' . __('Post short link', $plugin_name) . '</label></th><td><input type="text" id="vhm_bitly_link" name="vhm_bitly_link" value="' . $vhm_bitly_link . '" onclick="this.select()" readonly><p class="description">' . __('You will see here the short link once you "PUBLISH" the post.') . '</p></td>';
-			echo '<tr><th><label for="vhm_set_as_permalink">' . __('Set as permalink', $plugin_name) . '</label></th><td><label><input type="checkbox" id="vhm_set_as_permalink" name="vhm_set_as_permalink" value="1" '.checked( $vhm_set_as_permalink, 'on' ).'> <span class="description">' . __('Change the default link to the short link.') . '</span></label></td>';
-			echo '</tr></table>';
+			?>
+			<table class="form-table">
+				<tr>
+					<th><label for="vhm_bitly_link"><?php _e('Post short link', $this->plugin_name) ?></label></th>
+					<td>
+						<?php if (!$vhm_bitly_link) { ?>
+							<label><input type="checkbox" name="vhm_create_shortlink" value="1" checked="checked">
+							<span class="description"><?php _e('Uncheck this box to avoid creating a short link for this post.', $this->plugin_name); ?></span></label>
+						<?php } else { ?>
+							<input type="text" id="vhm_bitly_link" name="vhm_bitly_link" value="<?php echo $vhm_bitly_link ?>" onclick="this.select()" readonly>
+						<?php } ?>
+					</td>
+				</tr>
+			</table>
+			<?php
 		}
 		else {
-			echo '<p>' . __('In order to create short links you need to provide a Bitly Token.', $this->plugin_name) . ' ' . __('Go to', $this->plugin_name) . ' <a href="' . admin_url('options-general.php?page=vhm-bitly') . '">' . __('Settings page', $this->plugin_name) . '</a></p>';
+			echo '<p>' . __('In order to create short links you need to provide a Bitly Generic Access Token.', $this->plugin_name) . ' ' . __('Go to', $this->plugin_name) . ' <a href="' . admin_url('options-general.php?page=vhm-bitly') . '">' . __('Settings page', $this->plugin_name) . '</a></p>';
+		}
+	}
+	
+    public function save_meta_box($post_id)
+    {
+		$post_title = get_the_title($post_id);
+		$post_url = get_permalink($post_id);
+		$create_shortlink = ($_POST['vhm_create_shortlink'] == 1) ? 'on' : 'off' ;
+		
+		if ($create_shortlink == 'on' && !get_post_meta($post_id, '_vhm_bitly', true))
+		{
+			$apiv4 = 'https://api-ssl.bitly.com/v4/bitlinks';
+			$genericAccessToken = $this->token;
+
+			$data = array(
+				'title' => $post_title,
+				'long_url' => $post_url
+			);
+			$payload = json_encode($data);
+
+			$header = array(
+				'Authorization: Bearer ' . $genericAccessToken,
+				'Content-Type: application/json',
+				'Content-Length: ' . strlen($payload)
+			);
+
+			$ch = curl_init($apiv4);
+			curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");
+			curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+			curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+			curl_setopt($ch, CURLOPT_HTTPHEADER, $header);
+			$result = curl_exec($ch);
+			$resultToJson = json_decode($result);
+
+			if (isset($resultToJson->link)) {
+				update_post_meta($post_id, '_vhm_bitly', $resultToJson->link);
+			}
 		}
     }
+
 }
